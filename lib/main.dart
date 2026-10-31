@@ -1,8 +1,9 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const int kStartPage = 50;
 
@@ -83,13 +84,25 @@ class MushafScreen extends StatefulWidget {
 
 class _MushafScreenState extends State<MushafScreen> {
   final Future<MushafData> _future = MushafData.load();
-  final PageController _pc = PageController(initialPage: kStartPage - 1);
+  PageController? _pc;
   bool _dark = true;
   int _page = kStartPage;
+  SharedPreferences? _prefs;
+  late final Future<void> _init = _loadPrefs();
+  late final Future<MushafData> _ready =
+      Future.wait([_future, _init]).then((r) => r[0] as MushafData);
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    _prefs = p;
+    _dark = p.getBool('dark') ?? true;
+    _page = (p.getInt('page') ?? kStartPage).clamp(1, 604).toInt();
+    _pc = PageController(initialPage: _page - 1);
+  }
 
   @override
   void dispose() {
-    _pc.dispose();
+    _pc?.dispose();
     super.dispose();
   }
 
@@ -117,7 +130,10 @@ class _MushafScreenState extends State<MushafScreen> {
             visualDensity: VisualDensity.compact,
             color: c.accent,
             icon: Icon(_dark ? Icons.light_mode : Icons.dark_mode),
-            onPressed: () => setState(() => _dark = !_dark),
+            onPressed: () {
+              setState(() => _dark = !_dark);
+              _prefs?.setBool('dark', _dark);
+            },
           ),
         ],
       ),
@@ -131,7 +147,7 @@ class _MushafScreenState extends State<MushafScreen> {
       backgroundColor: c.bg,
       body: SafeArea(
         child: FutureBuilder<MushafData>(
-          future: _future,
+          future: _ready,
           builder: (context, snap) {
             if (snap.hasError) {
               return Center(child: Text('Error: ${snap.error}'));
@@ -147,9 +163,12 @@ class _MushafScreenState extends State<MushafScreen> {
                   _topBar(d, c),
                   Expanded(
                     child: PageView.builder(
-                      controller: _pc,
+                      controller: _pc!,
                       itemCount: d.pages.length,
-                      onPageChanged: (i) => setState(() => _page = i + 1),
+                      onPageChanged: (i) {
+                        setState(() => _page = i + 1);
+                        _prefs?.setInt('page', i + 1);
+                      },
                       itemBuilder: (context, i) => MushafPage(
                         pageNumber: i + 1,
                         lines: d.pages[i],
